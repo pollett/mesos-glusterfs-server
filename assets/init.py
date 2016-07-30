@@ -3,7 +3,8 @@ import os
 from gluster.Gluster import Gluster
 import sys
 import time
-from rancher_metadata import MetadataAPI
+import socket
+from marathon import MarathonClient
 
 __author__ = 'Sebastien LANGOUREAUX'
 
@@ -14,6 +15,7 @@ class ServiceRun():
     """ Init gluster
     """
 
+    print("init")
 
     if gluster_directory is None or gluster_directory == "":
       raise Exception("You must set te directory to store gluster folume")
@@ -27,8 +29,10 @@ class ServiceRun():
     self.__replica = replica
     self.__quota = quota
     self.__is_on_cluster = False
-
-
+    self.__marathon_client = MarathonClient(os.environ['MARATHON_URL'])
+    self.__gluster_app_id = os.environ['GLUSTER_APP_ID']
+    self.__marathon_app = self.__marathon_client.get_app(self.__gluster_app_id)
+    self.__task_id = os.environ['MESOS_TASK_ID']
 
   def __is_already_on_glusterfs(self):
     gluster = Gluster()
@@ -107,35 +111,24 @@ class ServiceRun():
     return peer_manager.status()
 
   def __get_my_container_info(self):
-    metadata_manager = MetadataAPI()
-    current_container = {}
-    current_container["name"] = metadata_manager.get_container_name()
-    current_container["ip"] = metadata_manager.get_container_ip()
-    current_container["id"] = metadata_manager.get_container_create_index()
-
-    return current_container
-
+    tasks = self.__marathon_app.tasks
+    for task in tasks:
+      for ip_address in task.ip_addresses:
+        if task.id == self.__task_id:
+          return { "name": task.id, "id": task.id, "ip": ip_address.ip_address }
+    return {}
 
   def __get_other_container_in_service(self, my_name):
-    metadata_manager = MetadataAPI()
     list_containers = {}
-    metadata_manager.wait_service_containers()
-    list_containers_name = metadata_manager.get_service_containers()
-    for container_name in list_containers_name:
-        if container_name != my_name:
-            list_containers[container_name] = {}
-            list_containers[container_name]['id'] = metadata_manager.get_container_create_index(container_name)
-            list_containers[container_name]['name'] = container_name
-            list_containers[container_name]['ip'] = metadata_manager.get_container_ip(container_name)
-
-
+    tasks = self.__marathon_app.tasks
+    for task in tasks:
+      for ip_address in task.ip_addresses:
+        if task.id != self.__task_id:
+          list_containers[task.id] = { "name": task.id, "id": task.id, "ip": ip_address.ip_address }
     return list_containers
 
-
   def __get_numbers_of_node_in_service(self):
-      metadata_manager = MetadataAPI()
-      return metadata_manager.get_service_scale_size()
-
+    return len(self.__marathon_app.tasks)
 
   def _is_master(self, current_container, list_containers):
 
@@ -145,16 +138,12 @@ class ServiceRun():
 
     return True
 
-
-
-
-
   def run(self):
-
     current_container = self.__get_my_container_info()
     list_containers = self.__get_other_container_in_service(current_container)
 
     print("Wait all glusterfs start on all node : ")
+    print(list_containers)
     self.__wait_all_glusterfs_start(list_containers)
     print("Ok \n")
 
@@ -167,14 +156,10 @@ class ServiceRun():
 
         time.sleep(60)
 
-
-
-
   def manage_cluster(self):
     gluster = Gluster()
     peer_manager = gluster.get_peer_manager()
     volume_manager = gluster.get_volume_manager()
-    metadata_manager = MetadataAPI()
 
     # I check there are more than 1 container
     number_node = self.__get_numbers_of_node_in_service()

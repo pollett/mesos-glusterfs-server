@@ -1,10 +1,8 @@
-FROM webcenter/rancher-stack-base:latest
-MAINTAINER Sebastien LANGOUREAUX <linuxworkgroup@hotmail.com>
-
+FROM ubuntu:latest
 
 ENV SERVICE_NAME "gluster"
 ENV GLUSTER_DATA "/data"
-ENV GLUSTER_VOLUMES "ranchervol"
+ENV GLUSTER_VOLUMES "mesosvol"
 ENV GLUSTER_TRANSPORT "tcp"
 ENV GLUSTER_REPLICA 2
 # Use it ig you should stripe your module
@@ -13,19 +11,21 @@ ENV GLUSTER_REPLICA 2
 #ENV GLUSTER_QUOTA "10GB"
 
 
+RUN apt-get update && \
+    apt-get install -y python-software-properties software-properties-common
 RUN add-apt-repository -y ppa:gluster/glusterfs-3.7 && \
     apt-get update && \
-    apt-get install -y glusterfs-server glusterfs-client
+    apt-get install -y glusterfs-server glusterfs-client python-pip git
 
 
 RUN mkdir /data
 
 # Install python lib to manage glusterfs
+RUN pip install marathon
 WORKDIR /usr/src
 RUN git clone https://github.com/disaster37/python-gluster.git
 WORKDIR /usr/src/python-gluster
 RUN python setup.py install
-RUN pip install rancher_metadata
 
 # Add some script to init the glusterfs cluster
 ADD assets/init.py /app/

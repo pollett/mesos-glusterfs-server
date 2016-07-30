@@ -1,5 +1,4 @@
 #!/bin/bash
 
 /usr/sbin/glusterd -p /var/run/glusterd.pid
-python /app/init.py start &
-exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
+python /app/init.py start
